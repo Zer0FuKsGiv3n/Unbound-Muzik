@@ -1,0 +1,39 @@
+name: unbound_music
+description: "Unbound Muzik — personal music player for Android. Free and ad-free forever, for one person."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Playback engine + foreground audio service (background play, lock-screen
+  # and notification controls, headphone/car controls).
+  just_audio: ^0.10.0
+  audio_service: ^0.18.0
+  audio_session: ^0.2.0
+  # YouTube access, direct from the app (native code is not subject to CORS):
+  # search, stream addresses, related videos. No API key, no quota, no proxy.
+  # Used as tools only — nothing is copied from any other app.
+  youtube_explode_dart: ^3.1.0
+  # Local persistence (liked songs, history, playlists, settings) and files.
+  shared_preferences: ^2.3.0
+  path_provider: ^2.1.0
+  http: ^1.2.0
+  # Space Grotesk headlines, Inter body (downloaded once, then cached).
+  google_fonts: ^6.2.0
+  # Combining position/buffered/duration streams for the seek bar
+  # (Rx.combineLatest3). Already in pubspec.lock as a transitive dep;
+  # listed here explicitly because the handler uses it directly.
+  rxdart: ^0.28.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
