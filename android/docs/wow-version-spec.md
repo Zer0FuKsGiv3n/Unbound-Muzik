@@ -574,19 +574,3 @@ systemUiOverlayStyle).** NOT sent yet — push to GitHub and APK send
 both need Daniel's separate confirmation. Gapless (item 2's second
 half) is still a follow-up after seek is verified on the phone.
 
-## Aesthetic & flow ideas Daniel is playing with (not necessary, not on the critical path)
-
-- 2026-11-17: Unique transition effects when changing from screen to
-  screen in the app (e.g. between the five tabs). Daniel's idea,
-  explicitly not necessary — something to play with. His vision: the
-  previous screen is set on fire, and the new screen opens with water
-  putting the fire out, in a cinematic kind of way. Refinement: let
-  the user choose between a variety of transition effects, so no
-  single one gets old — that choice would live in Settings, picked
-  once, not a daily toggle. Daniel's concern: sounds complicated /
-  a crash source. Assessment: the choice mechanism itself is simple
-  and low-risk in Flutter; the work and the performance risk are in
-  building each effect well, especially fire/water — needs on-phone
-  testing on the A16 for smoothness, not a crash risk if done the
-  standard way. Open questions: realistic fire/water vs stylized in
-  Unbound's violet/sky, and how fast it should run.
