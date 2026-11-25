@@ -8,42 +8,53 @@ import '../models/track.dart';
 import '../services/audio_handler.dart';
 import '../services/cover_art.dart';
 import '../theme/unbound_theme.dart';
+import '../widgets/teleport_transition.dart';
 import '../widgets/widgets.dart';
+import 'settings_screen.dart';
 
-/// Wordmark shown at the top of every tab.
-Widget _wordmark(PlaybackUiState playback) {
+/// Wordmark shown at the top of every tab. Home may pass a trailing
+/// action — the Settings gear, top-right — other tabs pass none.
+Widget _wordmark(PlaybackUiState playback, {Widget? trailing}) {
   return Padding(
     padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-    child: Column(
+    child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RichText(
-          text: TextSpan(
-            style: UnboundTheme.dark().textTheme.displayLarge,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const TextSpan(text: 'Unbound '),
-              TextSpan(
-                text: 'Muzik',
-                style: TextStyle(
-                  foreground: Paint()
-                    ..shader = UnboundColors.gradient.createShader(
-                      const Rect.fromLTWH(0, 0, 200, 40),
+              RichText(
+                text: TextSpan(
+                  style: UnboundTheme.dark().textTheme.displayLarge,
+                  children: [
+                    const TextSpan(text: 'Unbound '),
+                    TextSpan(
+                      text: 'Muzik',
+                      style: TextStyle(
+                        foreground: Paint()
+                          ..shader = UnboundColors.gradient.createShader(
+                            const Rect.fromLTWH(0, 0, 200, 40),
+                          ),
+                      ),
                     ),
+                  ],
                 ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Muzik, unbound from the ridiculousness.',
+                style: TextStyle(color: UnboundColors.textDim),
+              ),
+              const SizedBox(height: 12),
+              PlayingPill(
+                statusText: playback.statusText,
+                playing: playback.isPlaying,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 4),
-        const Text(
-          'Muzik, unbound from the ridiculousness.',
-          style: TextStyle(color: UnboundColors.textDim),
-        ),
-        const SizedBox(height: 12),
-        PlayingPill(
-          statusText: playback.statusText,
-          playing: playback.isPlaying,
-        ),
+        ...(trailing != null ? [trailing] : const []),
       ],
     ),
   );
@@ -109,15 +120,25 @@ Widget _noticeBox(String message, VoidCallback onDismiss) {
 }
 
 /// Shared list body: error, finished state, notice, then the tab content.
+/// [headerTrailing] is a top-right action for the wordmark — Home passes
+/// the Settings gear; other tabs pass nothing.
 Widget _tabBody({
   required AppState state,
   required List<Widget> children,
+  Widget? headerTrailing,
 }) {
   final playback = state.playback;
   return ListView(
-    padding: const EdgeInsets.only(bottom: 24),
+    // Bottom padding is the mini-player height (84) plus breathing
+    // room (24): the mini-player floats over the tab content, so
+    // without it the last row in every list hides underneath the
+    // player. That was one of the reasons the last build felt
+    // chaotic — content kept disappearing under the player.
+    // (Musify pads its content by the mini-player height for the
+    // same reason.)
+    padding: const EdgeInsets.only(bottom: 108),
     children: [
-      _wordmark(playback),
+      _wordmark(playback, trailing: headerTrailing),
       if (playback.errorMessage != null)
         _errorBox(
           playback.errorMessage!,
@@ -131,7 +152,12 @@ Widget _tabBody({
   );
 }
 
-TrackRow _row(AppState state, Track track, List<Track> list) {
+TrackRow _row(
+  AppState state,
+  Track track,
+  List<Track> list, {
+  VoidCallback? onHideFromStation,
+}) {
   final playback = state.playback;
   final index = list.indexOf(track);
   return TrackRow(
@@ -141,6 +167,16 @@ TrackRow _row(AppState state, Track track, List<Track> list) {
     isLiked: state.isLiked(track),
     onTap: () => state.handler.playAt(index, list: list),
     onLike: () => state.toggleLike(track),
+    onPlayNext: () => state.playNext(track),
+    onAddToQueue: () => state.addToQueue(track),
+    onGoToQueue: state.goToQueue,
+    onGoToArtist: () => state.goToArtist(track.artist),
+    onAddToPlaylist: (context) =>
+        showAddToPlaylistDialog(context, state, track),
+    onDownload: () => state.downloadTrack(track),
+    onShare: () => state.shareTrack(track),
+    onRecommendSimilar: () => state.startRadio(track.artist),
+    onHideFromStation: onHideFromStation,
   );
 }
 
@@ -157,6 +193,22 @@ class HomeScreen extends StatelessWidget {
     final current = playback.currentTrack;
     return _tabBody(
       state: state,
+      headerTrailing: IconButton(
+        onPressed: () {
+          Navigator.of(context).push(
+            TeleportPageRoute(
+              // Every screen change picks a different effect from
+              // the last one — the picker is shared with tab
+              // switches, so opening Settings is never the same
+              // visual as the switch that came before it.
+              effect: TeleportEffectPicker.next(),
+              builder: (_) => SettingsScreen(state: state),
+            ),
+          );
+        },
+        icon: const Icon(Icons.settings),
+        tooltip: 'Settings',
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -235,30 +287,6 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(
-                value: state.externalRecs,
-                activeColor: UnboundColors.violet,
-                onChanged: (v) {
-                  if (v != null) state.toggleExternalRecs(v);
-                },
-              ),
-              const Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Text(
-                    'External recommendations — expand picks from YouTube related videos. Off means your own mix only: liked, recent, and playlists. No network.',
-                    style: TextStyle(color: UnboundColors.textDim),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
         if (state.recommendations.isEmpty && !state.recsLoading)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -319,6 +347,20 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    // "Go to artist" (3-dot menu) asks for a search of the artist.
+    // The request arrives through AppState; run it once, after this
+    // frame, then clear it so a rebuild does not re-fire it. The
+    // guard inside the callback means a second scheduled callback
+    // (from a rebuild before the frame) is a no-op.
+    final artistSearch = state.artistSearchRequest;
+    if (artistSearch != null && artistSearch.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (state.artistSearchRequest != artistSearch) return;
+        _controller.text = artistSearch;
+        state.clearArtistSearchRequest();
+        state.handleSearch(artistSearch);
+      });
+    }
     final searchState = state.searchState;
     return _tabBody(
       state: state,
@@ -354,7 +396,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   FilledButton(
                     onPressed: () => state.handleSearch(_controller.text),
                     style: FilledButton.styleFrom(
-                      backgroundColor: UnboundColors.violet,
+                      backgroundColor: UnboundColors.aqua,
                       minimumSize: const Size(64, 48),
                     ),
                     child: const Text('Search'),
@@ -699,6 +741,19 @@ class _QueueScreenState extends State<QueueScreen> {
                 isLiked: state.isLiked(entry.value),
                 onTap: () => state.handler.playAt(entry.key),
                 onLike: () => state.toggleLike(entry.value),
+                onPlayNext: () => state.playNext(entry.value),
+                onAddToQueue: () => state.addToQueue(entry.value),
+                onGoToQueue: state.goToQueue,
+                onGoToArtist: () => state.goToArtist(entry.value.artist),
+                onAddToPlaylist: (context) => showAddToPlaylistDialog(
+                  context,
+                  state,
+                  entry.value,
+                ),
+                onDownload: () => state.downloadTrack(entry.value),
+                onShare: () => state.shareTrack(entry.value),
+                onRecommendSimilar: () =>
+                    state.startRadio(entry.value.artist),
                 trailing: IconButton(
                   onPressed: () async {
                     await state.downloadTrack(entry.value);
@@ -809,7 +864,7 @@ class _RadioScreenState extends State<RadioScreen> {
                         ? null
                         : () => state.startRadio(_artistController.text),
                     style: FilledButton.styleFrom(
-                      backgroundColor: UnboundColors.violet,
+                      backgroundColor: UnboundColors.aqua,
                       minimumSize: const Size(64, 48),
                     ),
                     child: Text(
@@ -819,39 +874,77 @@ class _RadioScreenState extends State<RadioScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Checkbox(
-                    value: state.radioAutoPlay,
-                    activeColor: UnboundColors.violet,
-                    onChanged: (v) {
-                      if (v != null) state.toggleRadioAutoPlay(v);
-                    },
-                  ),
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: Text(
-                        'Keep playing after the queue ends — pull in one more related song instead of stopping. Off means the queue ends cleanly, the way the web app does.',
-                        style: TextStyle(color: UnboundColors.textDim),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (playback.radioSeed != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    'Now playing station: ${playback.radioSeed}',
-                    style: const TextStyle(color: UnboundColors.textDim),
+              // The station page (Spotify's model, from the
+              // Musify/Spotify comparison): a radio is a visible,
+              // saveable list of songs, not an invisible queue
+              // trick. The seed, the songs coming next, a Save
+              // button, and a Refresh button. Each song's 3-dot
+              // menu has "Hide from this station" — the only
+              // steering Spotify's radio gives — and a hidden song
+              // never comes back into this station.
+              if (playback.radioSeed != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Now playing station: ${playback.radioSeed}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 4),
+                const Text(
+                  'A mix of the artist, similar artists of the same caliber, and new up-and-coming similar artists — in roughly equal parts.',
+                  style: TextStyle(color: UnboundColors.textDim),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => state.saveQueueAsPlaylist(
+                        '${playback.radioSeed} Radio',
+                      ),
+                      icon: const Icon(Icons.playlist_add, size: 18),
+                      label: const Text('Save station'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: state.radioLoading
+                          ? null
+                          : () => state.startRadio(playback.radioSeed!),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: Text(
+                        state.radioLoading ? 'Refreshing…' : 'Refresh',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._stationTracks(playback).map(
+                  (track) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _row(
+                      state,
+                      track,
+                      playback.queue,
+                      onHideFromStation: () =>
+                          state.hideFromStation(track),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ],
     );
   }
+}
+
+/// The station's upcoming songs: the queue from the current song
+/// onward. What already played is not the station anymore.
+List<Track> _stationTracks(PlaybackUiState playback) {
+  final queue = playback.queue;
+  final currentIndex = playback.currentIndex;
+  if (currentIndex < 0 || currentIndex >= queue.length) return queue;
+  return queue.sublist(currentIndex);
 }

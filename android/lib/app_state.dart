@@ -10,6 +10,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/track.dart';
 import 'services/audio_handler.dart';
@@ -76,6 +77,36 @@ class AppState extends ChangeNotifier {
 
   late PlaybackUiState _playback;
   PlaybackUiState get playback => _playback;
+
+  // --- Navigation requests (from the 3-dot menu) ---
+  //
+  // A song row lives deep inside a tab; it cannot switch tabs
+  // itself. It asks AppState, and HomeShell (the only place that
+  // owns the tab) acts on the request. The request is consumed
+  // once, by the shell, so a rebuild does not re-fire it.
+
+  TabKey? _tabRequest;
+  TabKey? get tabRequest => _tabRequest;
+
+  /// When [tab] is Search, an artist name to search for once the
+  /// tab opens (menu: "Go to artist"). Null otherwise.
+  String? _artistSearchRequest;
+  String? get artistSearchRequest => _artistSearchRequest;
+
+  void requestTab(TabKey tab, {String? artistSearch}) {
+    _tabRequest = tab;
+    _artistSearchRequest = artistSearch;
+    notifyListeners();
+  }
+
+  void clearTabRequest() {
+    _tabRequest = null;
+    _artistSearchRequest = null;
+  }
+
+  void clearArtistSearchRequest() {
+    _artistSearchRequest = null;
+  }
 
   // --- Search ---
 
@@ -267,6 +298,99 @@ class AppState extends ChangeNotifier {
       _radioLoading = false;
       notifyListeners();
     }
+  }
+
+  // --- 3-dot menu actions ---
+
+  /// Menu: "Play next" — the song plays right after the current one.
+  Future<void> playNext(Track track) async {
+    await handler.playNext(track);
+    _notice = '"${track.title}" plays next.';
+    notifyListeners();
+  }
+
+  /// Menu: "Add to queue" — the song joins the end of the queue.
+  Future<void> addToQueue(Track track) async {
+    await handler.addToQueue(track);
+    _notice = 'Added "${track.title}" to the queue.';
+    notifyListeners();
+  }
+
+  /// Menu: "Go to Queue" — show the queue tab.
+  void goToQueue() => requestTab(TabKey.queue);
+
+  /// Menu: "Go to artist" — open Search with the artist's name.
+  /// Unbound has no artist page (Musify does); a search for the
+  /// artist is the honest equivalent — it shows the artist's songs.
+  void goToArtist(String artist) =>
+      requestTab(TabKey.search, artistSearch: artist);
+
+  /// Menu: "Hide from this station" — the song is skipped and never
+  /// refilled into the current radio station.
+  Future<void> hideFromStation(Track track) async {
+    await handler.hideFromStation(track);
+    _notice = 'Hidden from this station.';
+    notifyListeners();
+  }
+
+  /// Menu: "Share" — the YouTube link for the song, through the
+  /// system share sheet. Only for YouTube tracks; a downloaded
+  /// local file has no link to share.
+  Future<void> shareTrack(Track track) async {
+    if (track.source != TrackSource.youtube) return;
+    await Share.share(
+      'Check out "${track.title}" by ${track.artist} — '
+      'https://www.youtube.com/watch?v=${track.id}',
+    );
+  }
+
+  /// Menu: "Add to playlist" — append the song to an existing
+  /// playlist. A song already in the playlist is not duplicated.
+  void addTrackToPlaylist(Track track, String playlistId) {
+    final index = _playlists.indexWhere((p) => p.id == playlistId);
+    if (index < 0) return;
+    final playlist = _playlists[index];
+    if (playlist.trackIds.contains(track.id)) {
+      _notice = '"${track.title}" is already in "${playlist.title}".';
+      notifyListeners();
+      return;
+    }
+    final updated = Playlist(
+      id: playlist.id,
+      title: playlist.title,
+      trackIds: [...playlist.trackIds, track.id],
+      createdAt: playlist.createdAt,
+    );
+    _playlists = [
+      ..._playlists.sublist(0, index),
+      updated,
+      ..._playlists.sublist(index + 1),
+    ];
+    storage.savePlaylists(_playlists);
+    _notice = 'Added "${track.title}" to "${playlist.title}".';
+    notifyListeners();
+  }
+
+  /// Menu: "Add to playlist" → new playlist — create a playlist
+  /// with this song as its first track.
+  void createPlaylistWithTrack(String name, Track track) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      _notice = 'Give the playlist a name first.';
+      notifyListeners();
+      return;
+    }
+    final playlist = Playlist(
+      id: '${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}-'
+          '${DateTime.now().microsecondsSinceEpoch % 100000}',
+      title: trimmed,
+      trackIds: [track.id],
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _playlists = [playlist, ..._playlists];
+    storage.savePlaylists(_playlists);
+    _notice = 'Created "$trimmed" with "${track.title}".';
+    notifyListeners();
   }
 
   // --- Downloads ---

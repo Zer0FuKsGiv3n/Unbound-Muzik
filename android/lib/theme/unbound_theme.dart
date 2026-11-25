@@ -1,20 +1,29 @@
 // Unbound Muzik — design tokens (Decision 10).
-// Same tokens as the web app: void #050505, ink #0b0b12, violet #8b5cf6,
-// sky #38bdf8, mint #34d399. Space Grotesk headlines, Inter body.
-// Frosted glass ONLY on the now-playing card and the player bar — glass
-// is expensive on the A16, so it stays rare. No 3D, no fake content.
+// Vortex palette, built 2026-11-24 from Daniel's vortex image: deep
+// navy background #010E28, cards #0A2037, player bar / Now Playing
+// #1C3C62. Bright cyan #2FB9D6 is the primary accent, ice #A9F4F9
+// the bright accent, mid cyan-blue #61BADD secondary, and soft pink
+// #EFAEB7 the warm accent from the vortex's pink streaks. This
+// SUPERSEDES the #0F0E1C / #1B1930 / #242145 violet palette built
+// 2026-11-21. APK-only — the web app keeps its own copies of the
+// old tokens (#050505 / #0B0B12); the tokens are duplicated in two
+// files, not shared, so changing these changes the APK only.
+// Space Grotesk headlines, Inter body. Frosted glass ONLY on the
+// now-playing card and the player bar — glass is expensive on the
+// A16, so it stays rare. No 3D, no fake content.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class UnboundColors {
-  static const voidBlack = Color(0xFF050505);
-  static const ink = Color(0xFF0B0B12);
-  static const violet = Color(0xFF8B5CF6);
-  static const violetBright = Color(0xFFA78BFA);
-  static const sky = Color(0xFF38BDF8);
-  static const mint = Color(0xFF34D399);
+  static const voidBlack = Color(0xFF010E28);
+  static const ink = Color(0xFF0A2037);
+  static const playerBar = Color(0xFF1C3C62);
+  static const aqua = Color(0xFF2FB9D6);
+  static const aquaBright = Color(0xFFA9F4F9);
+  static const sky = Color(0xFF61BADD);
+  static const rose = Color(0xFFEFAEB7);
   static const text = Color(0xFFFAFAFA);
   static const textDim = Color(0x8CFFFFFF);
   static const textFaint = Color(0x66FFFFFF);
@@ -22,7 +31,7 @@ class UnboundColors {
   static const glassBorder = Color(0x14FFFFFF);
 
   static const gradient = LinearGradient(
-    colors: [violet, sky],
+    colors: [aqua, aquaBright],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );
@@ -33,7 +42,7 @@ class UnboundTheme {
   /// AnnotatedRegion around the Scaffold (there is no AppBar, so
   /// AppBar.systemOverlayStyle does not apply). Light icons for a dark
   /// background; bar colours are transparent because on Android 15 the
-  /// bars are transparent overlays and the app's own #050505 background
+  /// bars are transparent overlays and the app's own #010E28 background
   /// is what shows through.
   static final systemUiOverlayStyle = SystemUiOverlayStyle.light.copyWith(
     statusBarColor: Colors.transparent,
@@ -49,7 +58,7 @@ class UnboundTheme {
     return base.copyWith(
       scaffoldBackgroundColor: UnboundColors.voidBlack,
       colorScheme: const ColorScheme.dark(
-        primary: UnboundColors.violet,
+        primary: UnboundColors.aqua,
         secondary: UnboundColors.sky,
         surface: UnboundColors.ink,
         onSurface: UnboundColors.text,
@@ -88,7 +97,7 @@ class UnboundTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: UnboundColors.voidBlack,
-        selectedItemColor: UnboundColors.violetBright,
+        selectedItemColor: UnboundColors.aquaBright,
         unselectedItemColor: UnboundColors.textDim,
         type: BottomNavigationBarType.fixed,
       ),

@@ -26,10 +26,17 @@ this is a fresh build from the approved design decisions.
 - **Library honesty:** Recently Played is a real history, separate
   from the queue. Downloads are real files stored on this phone — only
   files actually on disk are listed. No dead Spotify import.
-- **Design:** void `#050505`, ink `#0b0b12`, violet `#8b5cf6`, sky
-  `#38bdf8`, mint `#34d399`. Space Grotesk headlines, Inter body.
+- **Design:** vortex palette, sampled from Daniel's image 2026-11-24:
+  deep navy `#010E28`, cards `#0A2037`, player bar `#1C3C62`,
+  bright cyan `#2FB9D6`, ice `#A9F4F9`, mid cyan-blue `#61BADD`,
+  soft pink `#EFAEB7`. Space Grotesk headlines, Inter body.
   Frosted glass on the now-playing card and player bar only.
   Equalizer bars tied to real playback state. No 3D, no fake content.
+  Every screen change teleports through one of four effects —
+  twist, portal, flip, swoop — picked at random and never the
+  same twice in a row, so no two switches look alike. The Now
+  Playing sheet stays put (it is the persistent player) while the
+  content behind it teleports.
 
 ## The grey lane, stated plainly
 

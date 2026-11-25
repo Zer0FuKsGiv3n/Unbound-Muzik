@@ -26,6 +26,7 @@ import 'services/storage_service.dart';
 import 'services/youtube_service.dart';
 import 'theme/unbound_theme.dart';
 import 'widgets/now_playing_sheet.dart';
+import 'widgets/teleport_transition.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +35,7 @@ Future<void> main() async {
   // and identical on pre-Android-15 devices (Flutter 3.27+ already
   // opts target-35 apps in by default). The app draws behind the
   // status and navigation bars; the bars stay visible as transparent
-  // overlays, and the app's own #050505 background shows through.
+  // overlays, and the app's own #010E28 background shows through.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   final storage = await StorageService.create();
@@ -105,7 +106,8 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell>
+    with SingleTickerProviderStateMixin {
   TabKey _tab = TabKey.home;
   final _sheetController = DraggableScrollableController();
   // The mini-player header is a fixed height so the sheet's minimum
@@ -113,17 +115,129 @@ class _HomeShellState extends State<HomeShell> {
   static const double _miniPlayerHeight = 84;
   bool _sheetExpanded = false;
 
+  // Teleport for tab switches (Daniel, 2026-11-24, v2): four
+  // effects (twist / portal / flip / swoop), picked at random and
+  // never the same twice in a row, on every screen change. The tab
+  // content teleports out, the tab swaps at the midpoint, then the
+  // new tab teleports in from the other direction. The IndexedStack
+  // stays in place so no tab loses its scroll position or state;
+  // only the container teleports. The sheet (mini-player) is not
+  // part of the effect — it is the persistent player.
+  //
+  // Why the sheet collapses on a switch (navigation calm, from the
+  // Musify/Spotify comparison): a half-open sheet covers the bottom
+  // half of the new tab, so every switch showed a different amount
+  // of content. Collapsing to the mini-player means every switch
+  // lands on the full tab, the same way, every time.
+  late final AnimationController _teleportController;
+  late final Animation<double> _teleportCurved;
+  TabKey? _pendingTab;
+  TeleportEffect _teleportEffect = TeleportEffect.twist;
+  // The sheet's minimum size as a fraction of the body height,
+  // computed in the LayoutBuilder below (mini-player height /
+  // body height). Cached here so the sheet can be collapsed from
+  // anywhere (tab switch, back button, re-tap).
+  double _miniFraction = 0.1;
+
   @override
   void initState() {
     super.initState();
     _sheetController.addListener(_onSheetSizeChanged);
+    _teleportController = AnimationController(
+      vsync: this,
+      duration: teleportDuration,
+    );
+    _teleportCurved = CurvedAnimation(
+      parent: _teleportController,
+      curve: Curves.easeInOut,
+    );
+    _teleportController.addListener(_onTeleportTick);
+    // Menu actions (Go to Queue, Go to artist) ask AppState for a
+    // tab switch; the shell is the only place that can do it.
+    widget.state.addListener(_onStateNavigationRequest);
   }
 
   @override
   void dispose() {
+    _teleportController.removeListener(_onTeleportTick);
+    _teleportController.dispose();
     _sheetController.removeListener(_onSheetSizeChanged);
     _sheetController.dispose();
+    widget.state.removeListener(_onStateNavigationRequest);
     super.dispose();
+  }
+
+  void _onStateNavigationRequest() {
+    final request = widget.state.tabRequest;
+    if (request == null) return;
+    widget.state.clearTabRequest();
+    _switchToTab(request);
+  }
+
+  void _onTeleportTick() {
+    // Swap the tab at the visual midpoint of the effect, once per
+    // switch. If a second tap arrived mid-twist, _pendingTab holds
+    // the newest tab and the swap picks it up — rapid taps never
+    // lose their destination, and if the twist is already past its
+    // midpoint the swap happens on the next tick.
+    final pending = _pendingTab;
+    if (pending != null &&
+        pending != _tab &&
+        _teleportCurved.value >= 0.5) {
+      _pendingTab = null;
+      setState(() => _tab = pending);
+    }
+  }
+
+  void _collapseSheet() {
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        _miniFraction,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _switchToTab(TabKey next) {
+    if (next == _tab && !_teleportController.isAnimating) {
+      // Re-tapping the current tab is the "home base" reset:
+      // collapse the sheet to the mini-player. (Musify resets the
+      // tab on re-tap; Unbound's tabs have no deep stacks, so the
+      // sheet is the thing that needs resetting.)
+      _collapseSheet();
+      return;
+    }
+    if (_teleportController.isAnimating) {
+      // A switch is already teleporting: the newest tab wins. The
+      // midpoint (or the next tick, if past it) swaps to it, so the
+      // tap is never lost and there is no snap from restarting.
+      _pendingTab = next;
+      _collapseSheet();
+      return;
+    }
+    _pendingTab = next;
+    _teleportEffect = TeleportEffectPicker.next();
+    _collapseSheet();
+    _teleportController.forward(from: 0);
+  }
+
+  void _onTabTap(int index) => _switchToTab(TabKey.values[index]);
+
+  /// Android back, deterministic (Musify's rule): an expanded sheet
+  /// collapses first, then any tab goes Home, then Home exits the
+  /// app. Back never walks a tab history, because there is none.
+  void _handleBack() {
+    if (_sheetController.isAttached &&
+        _sheetController.size > _miniFraction + 0.05) {
+      _collapseSheet();
+      return;
+    }
+    if (_tab != TabKey.home) {
+      _switchToTab(TabKey.home);
+      return;
+    }
+    SystemNavigator.pop();
   }
 
   void _onSheetSizeChanged() {
@@ -151,14 +265,24 @@ class _HomeShellState extends State<HomeShell> {
         ];
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: UnboundTheme.systemUiOverlayStyle,
-          child: Scaffold(
+          child: PopScope(
+            // Back is handled by _handleBack (sheet → Home → exit),
+            // never by the default pop.
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) _handleBack();
+            },
+            child: Scaffold(
             body: LayoutBuilder(
               builder: (context, constraints) {
                 // The mini fraction must be computed at runtime as
                 // mini-player height / body height — never hard-coded —
                 // because the sheet's sizes are fractions of its parent.
+                // It is cached so the sheet can be collapsed from
+                // anywhere (tab switch, back button, re-tap).
                 final miniFraction =
                     _miniPlayerHeight / constraints.maxHeight;
+                _miniFraction = miniFraction;
                 return Stack(
                   children: [
                     // One inset owner per edge: the body owns the top
@@ -169,9 +293,19 @@ class _HomeShellState extends State<HomeShell> {
                     SafeArea(
                       top: true,
                       bottom: false,
-                      child: IndexedStack(
-                        index: _tab.index,
-                        children: screens,
+                      child: AnimatedBuilder(
+                        animation: _teleportCurved,
+                        builder: (context, child) {
+                          return TeleportEffectView(
+                            effect: _teleportEffect,
+                            t: _teleportCurved.value,
+                            child: child!,
+                          );
+                        },
+                        child: IndexedStack(
+                          index: _tab.index,
+                          children: screens,
+                        ),
                       ),
                     ),
                   DraggableScrollableSheet(
@@ -220,9 +354,7 @@ class _HomeShellState extends State<HomeShell> {
               ignoring: _sheetExpanded,
               child: BottomNavigationBar(
                 currentIndex: _tab.index,
-                onTap: (index) {
-                  setState(() => _tab = TabKey.values[index]);
-                },
+                onTap: _onTabTap,
                 items: const [
                   BottomNavigationBarItem(
                     icon: Icon(Icons.home),
@@ -247,6 +379,7 @@ class _HomeShellState extends State<HomeShell> {
                 ],
               ),
             ),
+          ),
           ),
           ),
         );

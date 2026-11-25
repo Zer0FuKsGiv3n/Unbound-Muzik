@@ -50,7 +50,7 @@ class NowPlayingSheet extends StatelessWidget {
     final track = playback.currentTrack;
     return Container(
       decoration: const BoxDecoration(
-        color: UnboundColors.ink,
+        color: UnboundColors.playerBar,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         border: Border(
           top: BorderSide(color: UnboundColors.glassBorder),
@@ -195,7 +195,7 @@ class NowPlayingSheet extends StatelessWidget {
                                     ? Icons.favorite
                                     : Icons.favorite_border,
                                 color: state.isLiked(track)
-                                    ? UnboundColors.violetBright
+                                    ? UnboundColors.aquaBright
                                     : null,
                               ),
                               tooltip: 'Like',
@@ -219,7 +219,7 @@ class NowPlayingSheet extends StatelessWidget {
                                   state.handler.togglePlay();
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: UnboundColors.violet,
+                                  backgroundColor: UnboundColors.aqua,
                                   foregroundColor: Colors.white,
                                   shape: const CircleBorder(),
                                   padding: EdgeInsets.zero,
@@ -258,7 +258,7 @@ class NowPlayingSheet extends StatelessWidget {
                               icon: Icon(
                                 Icons.repeat,
                                 color: state.repeatOn
-                                    ? UnboundColors.violetBright
+                                    ? UnboundColors.aquaBright
                                     : null,
                               ),
                               tooltip: 'Repeat',
@@ -285,6 +285,19 @@ class NowPlayingSheet extends StatelessWidget {
                     isLiked: state.isLiked(queueTrack),
                     onTap: () => state.handler.playAt(i),
                     onLike: () => state.toggleLike(queueTrack),
+                    onPlayNext: () => state.playNext(queueTrack),
+                    onAddToQueue: () => state.addToQueue(queueTrack),
+                    onGoToQueue: state.goToQueue,
+                    onGoToArtist: () => state.goToArtist(queueTrack.artist),
+                    onAddToPlaylist: (context) => showAddToPlaylistDialog(
+                      context,
+                      state,
+                      queueTrack,
+                    ),
+                    onDownload: () => state.downloadTrack(queueTrack),
+                    onShare: () => state.shareTrack(queueTrack),
+                    onRecommendSimilar: () =>
+                        state.startRadio(queueTrack.artist),
                   );
                 },
                 childCount: playback.queue.length,

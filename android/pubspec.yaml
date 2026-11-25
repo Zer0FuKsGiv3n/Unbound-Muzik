@@ -29,6 +29,8 @@ dependencies:
   # (Rx.combineLatest3). Already in pubspec.lock as a transitive dep;
   # listed here explicitly because the handler uses it directly.
   rxdart: ^0.28.0
+  # System share sheet for the 3-dot menu's Share item.
+  share_plus: ^10.0.0
 
 dev_dependencies:
   flutter_test:

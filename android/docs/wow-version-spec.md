@@ -98,7 +98,9 @@ the next APK gets built from, once Daniel says go.
 - **Still needs Daniel's on-phone test:** start a song, enter split-screen,
   check playback continues and the UI looks right in a narrow window.
 
-## Proposed palette + Settings layout — filed 2026-11-14 evening, for Daniel's approval, NOT built
+## Proposed palette + Settings layout — SUPERSEDED 2026-11-24 by the vortex palette (below); vortex APK BUILT and SENT 2026-11-24
+
+**Vortex version — BUILT 2026-11-24 08:58 MST, SENT to Daniel the same morning.** Daniel's direction that morning: the next version he receives was to have the color scheme of his vortex image and a transition that feels like the screen twisting in & out in a unique teleportation jump. Palette (sampled from `~/workspace/user/files/1000001026_0_16uw.jpg`): deep navy `#010E28` background, `#0A2037` cards, `#1C3C62` player bar, bright cyan `#2FB9D6` primary, ice `#A9F4F9` bright, mid cyan-blue `#61BADD` secondary, soft pink `#EFAEB7` warm accent; `violet`/`violetBright` renamed to `aqua`/`aquaBright`, `mint` removed (EQ bars + playing dot now use `aquaBright`). Teleport twist (`lib/widgets/teleport_transition.dart`): tab switches twist out ~126° and back in from the other direction over 420ms, tab swaps at the midpoint, IndexedStack state preserved; Settings opens through the same twist via `TeleportPageRoute`; the Now Playing sheet is deliberately NOT twisted. 3-dot menu added the same day at Daniel's ask (from his Musify Time Machine screenshot): every `TrackRow` has a 3-dot menu with "Recommend similar artists", wired to `state.startRadio(track.artist)`. Build: sandbox Gradle block is GONE — built in 735s, 153,190,810 bytes, sha1 `9ec9c81bd21e1cad560fd3ab4e9350d133d62753`; all 24 markers verified in kernel_blob.bin. Daniel chose "Wait — send the vortex version" (tapped ~08:44 MST). NOT pushed to GitHub — push of the newer code is still HELD pending his forget confirmation for the older transition idea.
 
 Daniel's direction (2026-11-13 evening): the feel of the most updated
 Spotify Premium, with Unbound's own violet/sky identity, not Spotify green.
@@ -108,9 +110,15 @@ mint `#34D399`. The spec until now said "richer dark with more depth" with
 no final tokens — this is the concrete proposal, so he can approve, reject,
 or adjust it instead of answering an open-ended design question.
 
-**Proposed tokens (APK; note the theme file says these tokens are shared
-with the web app, so changing them changes both — flag if web should stay
-as-is):**
+**Shared-token flag — RESOLVED 2026-11-21:** the theme file's claim that
+the tokens are shared with the web app was wrong. The tokens are written
+out separately in two files with the same values — duplicated, not shared —
+with no sync step between them, and the proposed new colors appear nowhere
+in the web source. Changing the APK tokens changes the APK only; the web
+keeps `#050505` / `#0B0B12`. So the palette below is APK-only by
+construction, and the "should the web stay as-is" question answers itself.
+
+**Tokens (APK only):**
 - Background (scaffold): `#0F0E1C` — deep violet-charcoal, richer than flat
   `#050505`, still dark. Replaces voidBlack as the scaffold colour.
 - Surface (cards): `#1B1930` — lifted violet-tinted card, the step up from
@@ -140,11 +148,34 @@ as-is):**
   yet) also belongs here eventually, per the breakage list — not in this
   first pass unless Daniel asks.
 
-**Status:** proposal only. No code changed, no APK built or sent. It does
-not replace the three pending decisions (build now vs wait for the Mix
-check; is the tweak list done; gear-icon Settings) — it gives Daniel
-something concrete to react to on the colour question while he finishes
-the list.
+**Status:** IMPLEMENTED 2026-11-21 under Daniel's standing Nov 20 authorization
+(logical & necessary, diagnose-first, make-it-make-sense). Palette tokens
+changed in `lib/theme/unbound_theme.dart` (voidBlack `#0F0E1C`,
+ink `#1B1930`, new `playerBar` `#242145` applied to the Now Playing sheet);
+Settings screen created at `lib/screens/settings_screen.dart`, gear icon
+top-right of Home, both toggles moved out of Home and Radio. `flutter
+analyze --no-pub` is clean (only 9 pre-existing info lints in the docs
+script `docs/artist-radio-mix-check.dart`).
+**APK build NOT completed in this sandbox:** `flutter build apk --debug
+--no-pub` fails because the sandbox egress proxy resets Gradle's
+connections to plugins.gradle.org (`Connection reset` via
+hatch-egress-proxy) while curl fetches the same files in under a second —
+the known sandbox quirk noted in `android/settings.gradle.kts`. The
+blocking artifact is the `org.gradle.kotlin.kotlin-dsl:5.1.2` plugin
+(Gradle's own build script needs it). Environment repaired during this
+attempt so a live-session retry starts further ahead: Gradle 8.12
+distribution restored into the wrapper dists dir from
+`~/workspace/sdk-downloads/gradle-8.12-all.zip`, the egress-proxy
+`gradle.properties` copied into `/root/.gradle/`, and a stale Gradle
+daemon holding the journal lock cleared. Retry command (live session):
+`JAVA_HOME=/home/hatch/workspace/jdk17 GRADLE_USER_HOME=/root/.gradle
+flutter build apk --debug --no-pub` from `~/workspace/unbound-music-android`.
+NOT pushed to GitHub at that time (a related forget cleanup was
+pending then; it was completed 2026-11-25) and NOT sent (APK send
+needs his separate say-so). The
+latest APK on disk is still the Nov 18 radio+gapless build
+(sha1 `6653d30bc5bc191a8c735b25a38c692c9ea298d9`). If he wants different
+colors, it is two constants in one file.
 
 ## Open decisions — Daniel's call, still pending as of 2026-11-14 midday
 

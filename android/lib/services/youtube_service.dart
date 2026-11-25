@@ -200,6 +200,29 @@ class YoutubeService {
     }
   }
 
+  /// YouTube Music's own Mix for a seed video (the playlist whose id is
+  /// `RDAMVM` followed by the seed video id).
+  /// This is YouTube Music's radio pool — music-only, already filtered —
+  /// unlike raw related videos, which are polluted with non-music. Returns
+  /// an empty list when the Mix can't be fetched; callers must fall back
+  /// to related videos / search. UNVERIFIED on a real network (the
+  /// sandbox returned empty for every playlist fetch, Mix and control
+  /// alike), so an empty result here proves nothing about the Mix.
+  Future<List<Track>> fetchMixTracks(String seedVideoId) async {
+    final id = seedVideoId.trim();
+    if (id.isEmpty) return [];
+    try {
+      final videos = await _yt.playlists
+          .getVideos('RDAMVM$id')
+          .take(25)
+          .timeout(const Duration(seconds: 20))
+          .toList();
+      return videos.map(_toTrack).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// The direct audio-file address for a video: highest-bitrate
   /// audio-only stream from the manifest — plus the headers the client
   /// that minted the URL expects (see [_songClients]). Throws on failure.
@@ -274,4 +297,214 @@ class YoutubeService {
     });
     return pool.first;
   }
+}
+
+/// Words in a title that mark a track as a remix, cover, or otherwise
+/// altered version rather than the song itself. These are dropped from
+/// radio mixes — the Mix itself contains remixes, so the filter is
+/// needed even when the pool is YouTube Music's own. Matched as
+/// substrings on the lowercased title.
+const _radioDropWords = [
+  'remix',
+  'cover',
+  'sped up',
+  'slowed',
+  '8d',
+  'nightcore',
+  'reverb',
+  'slowed down',
+];
+
+/// Normalize an artist/channel name for comparison: lowercase, strip
+/// non-alphanumerics, and drop channel suffixes (VEVO, Topic, Official,
+/// Music) so "Joyner Lucas", "Joyner Lucas - Topic" and
+/// "JoynerLucasVEVO" all match. The seed name gets the same treatment,
+/// so the comparison is symmetric.
+String _normalizeArtist(String name) {
+  var n = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  for (final w in ['vevo', 'topic', 'official', 'music']) {
+    n = n.replaceAll(w, '');
+  }
+  return n;
+}
+
+bool _sameArtist(String a, String b) {
+  final na = _normalizeArtist(a);
+  final nb = _normalizeArtist(b);
+  if (na.isEmpty || nb.isEmpty) return false;
+  if (na == nb) return true;
+  return na.contains(nb) || nb.contains(na);
+}
+
+bool _isAlteredVersion(Track t) {
+  final title = t.title.toLowerCase();
+  return _radioDropWords.any((w) => title.contains(w));
+}
+
+/// Shape a radio candidate pool into a Spotify-like ratio, in Unbound's
+/// own code. Pure selection/arrangement — no network, trivially
+/// testable. Works on any pool (the Mix, related videos, search
+/// results); the Mix is the best pool because YouTube Music already
+/// filtered it to music.
+///
+/// Buckets, from the artist-radio deep dive:
+///   (a) the seed artist — author/channel matches the seed;
+///   (b) other artists, first half of the source order (YouTube ranked
+///       these higher — the "same caliber" proxy);
+///   (c) other artists, second half of the source order (the
+///       "emerging / long tail" proxy).
+/// The buckets are interleaved round-robin to roughly equal thirds,
+/// never two in a row from the same artist. Within each bucket, tracks
+/// are ranked by [affinityFor] when given (the local listening-stats
+/// scorer — unplayed tracks score a 0.50 neutral prior, so they are
+/// not buried); otherwise the source order stands. Up to three
+/// [personalTracks] (liked / recently played) whose artist appears in
+/// the radio's artist set are sprinkled in at spread positions, so the
+/// radio feels like Daniel's, not a generic mix. Returns at most 25
+/// tracks. Never ranks by view count — the stock library mangles it
+/// ("1.2M views" parses to 12).
+List<Track> shapeRadioMix(
+  List<Track> candidates,
+  String seedArtist, {
+  double Function(Track)? affinityFor,
+  List<Track> personalTracks = const [],
+}) {
+  // Dedupe by video ID, drop altered versions.
+  final seen = <String>{};
+  final clean = <Track>[];
+  for (final t in candidates) {
+    if (!seen.add(t.id)) continue;
+    if (_isAlteredVersion(t)) continue;
+    clean.add(t);
+  }
+  if (clean.isEmpty) return [];
+
+  // Bucket A: seed artist. The rest split into B (first half, higher
+  // in YouTube's order) and C (second half, long tail).
+  final a = <Track>[];
+  final others = <Track>[];
+  for (final t in clean) {
+    if (_sameArtist(t.artist, seedArtist)) {
+      a.add(t);
+    } else {
+      others.add(t);
+    }
+  }
+  final half = (others.length / 2).ceil();
+  final b = others.sublist(0, half);
+  final c = others.sublist(half);
+
+  // Rank within each bucket by affinity (descending); source order is
+  // the tiebreak (sort is stable, so equal scores keep their order).
+  int rank(Track x, Track y) {
+    if (affinityFor != null) {
+      final d = affinityFor(y).compareTo(affinityFor(x));
+      if (d != 0) return d;
+    }
+    return 0;
+  }
+
+  a.sort(rank);
+  b.sort(rank);
+  c.sort(rank);
+
+  // Interleave A, B, C round-robin to roughly equal thirds. Never two
+  // in a row from the same artist: buckets are disjoint by artist, so
+  // consecutive picks from different buckets are always different
+  // artists; when only one bucket still has tracks, skip past a
+  // same-artist track and take the next different one.
+  final buckets = [a, b, c];
+  final indices = [0, 0, 0];
+  final out = <Track>[];
+  String? lastArtistKey;
+  var progressed = true;
+  while (progressed && out.length < 25) {
+    progressed = false;
+    for (var k = 0; k < buckets.length; k++) {
+      if (out.length >= 25) break;
+      final bucket = buckets[k];
+      var i = indices[k];
+      // Find the next track in this bucket from a different artist
+      // than the last emitted track.
+      while (i < bucket.length) {
+        final key = _normalizeArtist(bucket[i].artist);
+        if (lastArtistKey == null || key != lastArtistKey) break;
+        i++;
+      }
+      if (i >= bucket.length) continue;
+      final next = bucket[i];
+      indices[k] = i + 1;
+      out.add(next);
+      lastArtistKey = _normalizeArtist(next.artist);
+      progressed = true;
+    }
+  }
+  // Any tracks left in a bucket that were skipped only because of the
+  // same-artist guard are placed by cycling the buckets again,
+  // preferring a track whose artist differs from the last emitted, so
+  // the remainder is spread out instead of dumped one artist at a time.
+  // Only when every remaining track is by the same artist as the last
+  // emitted do we accept the adjacency — there is nothing else to play.
+  final inOut = out.map((t) => t.id).toSet();
+  while (out.length < 25) {
+    var placed = false;
+    for (final bucket in buckets) {
+      if (out.length >= 25) break;
+      var idx = -1;
+      for (var i = 0; i < bucket.length; i++) {
+        if (inOut.contains(bucket[i].id)) continue;
+        final key = _normalizeArtist(bucket[i].artist);
+        if (lastArtistKey == null || key != lastArtistKey) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx == -1) continue;
+      out.add(bucket[idx]);
+      inOut.add(bucket[idx].id);
+      lastArtistKey = _normalizeArtist(bucket[idx].artist);
+      placed = true;
+    }
+    if (!placed) {
+      // Nothing left differs from the last emitted artist. Append the
+      // rest in bucket order — the adjacency is unavoidable now.
+      for (final bucket in buckets) {
+        for (final t in bucket) {
+          if (out.length >= 25) break;
+          if (inOut.contains(t.id)) continue;
+          out.add(t);
+          inOut.add(t.id);
+        }
+        if (out.length >= 25) break;
+      }
+      break;
+    }
+  }
+
+  // Personal layer: up to 3 liked/recent tracks whose artist is in the
+  // radio's artist set, sprinkled at spread positions. Never duplicates
+  // a track already in the mix.
+  if (personalTracks.isNotEmpty) {
+    final radioArtists = clean.map((t) => _normalizeArtist(t.artist)).toSet();
+    final inMix = out.map((t) => t.id).toSet();
+    final sprinkle = <Track>[];
+    for (final t in personalTracks) {
+      if (sprinkle.length >= 3) break;
+      if (inMix.contains(t.id)) continue;
+      if (_isAlteredVersion(t)) continue;
+      if (!radioArtists.contains(_normalizeArtist(t.artist))) continue;
+      sprinkle.add(t);
+      inMix.add(t.id);
+    }
+    // Spread them through the mix (after track 4, then ~every 6).
+    var insertAt = 4;
+    for (final t in sprinkle) {
+      if (out.length >= 25) break;
+      final pos = insertAt.clamp(0, out.length);
+      out.insert(pos, t);
+      insertAt += 6;
+    }
+  }
+
+  return out;
 }

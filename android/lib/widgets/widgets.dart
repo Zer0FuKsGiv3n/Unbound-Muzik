@@ -8,6 +8,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_state.dart';
 import '../models/track.dart';
 import '../services/cover_art.dart';
 import '../theme/unbound_theme.dart';
@@ -80,7 +81,7 @@ class _EqBarsState extends State<EqBars> with SingleTickerProviderStateMixin {
                   height: h,
                   margin: const EdgeInsets.only(right: 2),
                   decoration: BoxDecoration(
-                    color: UnboundColors.mint,
+                    color: UnboundColors.aquaBright,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -162,7 +163,7 @@ class _PlayingPillState extends State<PlayingPill>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: widget.playing
-                        ? UnboundColors.mint
+                        ? UnboundColors.aquaBright
                         : UnboundColors.textFaint,
                   ),
                 ),
@@ -222,6 +223,15 @@ class TrackRow extends StatelessWidget {
     required this.isLiked,
     required this.onTap,
     required this.onLike,
+    required this.onPlayNext,
+    required this.onAddToQueue,
+    required this.onGoToQueue,
+    required this.onGoToArtist,
+    required this.onAddToPlaylist,
+    required this.onDownload,
+    required this.onShare,
+    required this.onRecommendSimilar,
+    this.onHideFromStation,
     this.trailing,
   });
 
@@ -231,14 +241,67 @@ class TrackRow extends StatelessWidget {
   final bool isLiked;
   final VoidCallback onTap;
   final VoidCallback onLike;
+
+  /// Menu: "Play next" — this song plays right after the current one.
+  final VoidCallback onPlayNext;
+
+  /// Menu: "Add to queue" — this song joins the end of the queue.
+  final VoidCallback onAddToQueue;
+
+  /// Menu: "Go to Queue" — show the queue tab.
+  final VoidCallback onGoToQueue;
+
+  /// Menu: "Go to artist" — open Search with this track's artist.
+  final VoidCallback onGoToArtist;
+
+  /// Menu: "Add to playlist" — opens the playlist picker. Takes
+  /// a context because the picker is a dialog.
+  final void Function(BuildContext context) onAddToPlaylist;
+
+  /// Menu: "Download" — save a real audio file on the phone.
+  final VoidCallback onDownload;
+
+  /// Menu: "Share" — the YouTube link, through the system share
+  /// sheet. Only shown for YouTube tracks.
+  final VoidCallback onShare;
+
+  /// Starts an artist radio for this track's artist — the
+  /// "Recommend similar artists" option in the 3-dot menu
+  /// (Daniel, 2026-11-24, from Musify's Time Machine screen).
+  /// It plays the shaped radio mix: the artist, similar artists
+  /// of the same caliber, and new up-and-coming similar artists.
+  /// It sits near the bottom of the menu, where Spotify puts its
+  /// radio entry.
+  final VoidCallback onRecommendSimilar;
+
+  /// Menu: "Hide from this station" — only for rows in a radio
+  /// station list. Null everywhere else, and the item is hidden.
+  final VoidCallback? onHideFromStation;
   final Widget? trailing;
+
+  PopupMenuItem<String> _menuItem(
+    String value,
+    IconData icon,
+    String label,
+  ) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: UnboundColors.aquaBright),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: isCurrent
           ? BoxDecoration(
-              color: UnboundColors.violet.withValues(alpha: 0.10),
+              color: UnboundColors.aqua.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             )
           : null,
@@ -308,16 +371,168 @@ class TrackRow extends StatelessWidget {
               isLiked ? '♥ Liked' : '♡ Like',
               style: TextStyle(
                 color: isLiked
-                    ? UnboundColors.violetBright
+                    ? UnboundColors.aquaBright
                     : UnboundColors.textDim,
                 fontSize: 13,
               ),
             ),
           ),
+          // 3-dot menu, far right like Musify's. A fixed, short,
+          // predictable order (Musify's discipline) in a Spotify-like
+          // grouping: queue controls first, then the artist and
+          // playlist actions, then Download and Share, then the
+          // radio entry near the bottom, where Spotify puts it.
+          // No two sources agree on Spotify's exact order, and a
+          // menu that changes order is the busy part — so Unbound's
+          // order never changes. Items that do not apply are hidden,
+          // never shown dead: Share only for YouTube tracks, Hide
+          // only inside a radio station.
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: 'More options',
+            color: UnboundColors.ink,
+            onSelected: (value) {
+              switch (value) {
+                case 'playNext':
+                  onPlayNext();
+                case 'addToQueue':
+                  onAddToQueue();
+                case 'goToQueue':
+                  onGoToQueue();
+                case 'goToArtist':
+                  onGoToArtist();
+                case 'addToPlaylist':
+                  onAddToPlaylist(context);
+                case 'download':
+                  onDownload();
+                case 'share':
+                  onShare();
+                case 'similar':
+                  onRecommendSimilar();
+                case 'hide':
+                  onHideFromStation?.call();
+              }
+            },
+            itemBuilder: (context) => [
+              _menuItem('playNext', Icons.skip_next, 'Play next'),
+              _menuItem('addToQueue', Icons.queue, 'Add to queue'),
+              _menuItem('goToQueue', Icons.queue_music, 'Go to Queue'),
+              _menuItem('goToArtist', Icons.person, 'Go to artist'),
+              _menuItem(
+                'addToPlaylist',
+                Icons.playlist_add,
+                'Add to playlist',
+              ),
+              _menuItem('download', Icons.download, 'Download'),
+              if (track.source == TrackSource.youtube)
+                _menuItem('share', Icons.share, 'Share'),
+              _menuItem(
+                'similar',
+                Icons.radio,
+                'Recommend similar artists',
+              ),
+              if (onHideFromStation != null)
+                _menuItem(
+                  'hide',
+                  Icons.visibility_off,
+                  'Hide from this station',
+                ),
+            ],
+          ),
         ],
       ),
     );
   }
+}
+
+/// The "Add to playlist" picker (3-dot menu). Lists the existing
+/// playlists; tapping one adds the song. A text field + Create
+/// button makes a new playlist with the song as its first track.
+/// An empty name does nothing — the dialog stays open so the user
+/// can type one.
+Future<void> showAddToPlaylistDialog(
+  BuildContext context,
+  AppState state,
+  Track track,
+) async {
+  final nameController = TextEditingController();
+  await showDialog<void>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: UnboundColors.ink,
+        title: Text('Add "${track.title}" to…'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (state.playlists.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'No playlists yet — make one below.',
+                    style: TextStyle(color: UnboundColors.textDim),
+                  ),
+                )
+              else
+                ...state.playlists.map(
+                  (playlist) => ListTile(
+                    title: Text(playlist.title),
+                    subtitle: Text(
+                      '${playlist.trackIds.length} songs',
+                      style: const TextStyle(
+                        color: UnboundColors.textDim,
+                      ),
+                    ),
+                    onTap: () {
+                      state.addTrackToPlaylist(track, playlist.id);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  hintText: 'New playlist name…',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                  ),
+                  filled: true,
+                  fillColor: UnboundColors.playerBar,
+                ),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (name) {
+                  if (name.trim().isEmpty) return;
+                  state.createPlaylistWithTrack(name, track);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (nameController.text.trim().isEmpty) return;
+              state.createPlaylistWithTrack(nameController.text, track);
+              Navigator.of(context).pop();
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: UnboundColors.aqua,
+            ),
+            child: const Text('Create'),
+          ),
+        ],
+      );
+    },
+  );
+  nameController.dispose();
 }
 
 /// The fixed player bar (glass): cover, title/artist, previous,
@@ -408,7 +623,7 @@ class PlayerBar extends StatelessWidget {
                 onToggle();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: UnboundColors.violet,
+                backgroundColor: UnboundColors.aqua,
                 foregroundColor: Colors.white,
                 shape: const CircleBorder(),
                 padding: EdgeInsets.zero,
@@ -499,9 +714,9 @@ class _SeekBarState extends State<SeekBar> {
       children: [
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            activeTrackColor: UnboundColors.violet,
+            activeTrackColor: UnboundColors.aqua,
             inactiveTrackColor: UnboundColors.glassBorder,
-            thumbColor: UnboundColors.violetBright,
+            thumbColor: UnboundColors.aquaBright,
             trackHeight: 4,
             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
           ),
